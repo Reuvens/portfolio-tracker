@@ -15,6 +15,11 @@ def calculate_tax_liability(
       For simplified logic here as requested: "set a marginal tax rate (e.g., 50%) applied to the full value upon vesting".
     """
     
+    
+    # Auto-detect employee equity from type
+    if asset_type == "GSU/RSU":
+        is_employee_equity = True
+
     if is_employee_equity:
         # User specified: applied to full value upon vesting
         return market_value_ils * marginal_tax_rate
@@ -23,8 +28,9 @@ def calculate_tax_liability(
     if gain <= 0:
         return 0.0
     
-    # Capital Gains Tax (25% default in IL)
-    # TODO: Add inflation adjustment logic here
+    # Capital Gains Tax
+    # Israeli Gov Bonds -> 15% nominal usually, but simplifying here
+    # Cash/Deposit -> 15% or 25% depending on track, keeping 25% default
     tax_rate = 0.25 
     return gain * tax_rate
 

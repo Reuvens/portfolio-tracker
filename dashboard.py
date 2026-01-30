@@ -132,7 +132,7 @@ def get_assets():
     with Session(engine) as session:
         return session.exec(select(Asset)).all()
 
-def add_asset(name, ticker, quantity, cost_per_unit, asset_type, currency):
+def add_asset(name, ticker, quantity, cost_per_unit, asset_type, currency, account_type, liquidity, allocation_bucket, notes, manual_price):
     with Session(engine) as session:
         asset = Asset(
             user_id=1,
@@ -142,7 +142,12 @@ def add_asset(name, ticker, quantity, cost_per_unit, asset_type, currency):
             quantity=quantity,
             cost_per_unit=cost_per_unit,
             cost_basis=quantity * cost_per_unit,
-            currency=currency
+            currency=currency,
+            account_type=account_type,
+            liquidity=liquidity,
+            allocation_bucket=allocation_bucket,
+            notes=notes,
+            manual_price=manual_price
         )
         session.add(asset)
         session.commit()
@@ -183,28 +188,99 @@ with c_head2:
 
 # --- Add Asset Dialog ---
 if st.session_state.get('show_add_form', False):
+    st.markdown("""
+        <style>
+            .modal-overlay {
+                position: fixed;
+                top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                z-index: 999;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .stForm {
+                background-color: #0E131C;
+                border: 1px solid #232C3B;
+                border-radius: 12px;
+                padding: 2rem;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     with st.container():
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<div class='card' style='border: 1px solid #3B82F6; box-shadow: 0 4px 20px rgba(0,0,0,0.5);'>", unsafe_allow_html=True)
+        # Header with Close Button
+        c_h1, c_h2 = st.columns([1, 0.1])
+        c_h1.subheader("Add New Position")
+        if c_h2.button("✕", key="close_form_x"):
+            st.session_state.show_add_form = False
+            st.rerun()
+
         with st.form("add_asset_form_rev"):
-            st.subheader("Add New Asset")
-            ca, cb = st.columns(2)
-            fname = ca.text_input("Asset Name", key="f_n")
-            fticker = cb.text_input("Ticker", key="f_t")
-            fqty = ca.number_input("Quantity", min_value=0.0, step=0.01)
-            fcost = cb.number_input("Cost Per Token/Share", min_value=0.0, step=0.01)
-            fcurr = ca.selectbox("Currency", ["USD", "ILS"])
-            ftype = cb.selectbox("Type", ["US Stock/ETF", "IL Stock", "IL Gov Bond", "Crypto", "Cash"])
+            # Asset Type (Full Width)
+            ftype = st.selectbox("Asset Type", ["US Stock/ETF", "Israeli Stock", "Israeli Corporate Bond", "Israeli Gov Bond", "Cryptocurrency", "Cash/Deposit", "GSU/RSU"])
             
-            sc1, sc2 = st.columns([1, 4])
+            # Row 2: Ticker | Name
+            r2_1, r2_2 = st.columns(2)
+            fticker = r2_1.text_input("Ticker / Symbol", placeholder="e.g., GOOG, 1184076")
+            fname = r2_2.text_input("Name", placeholder="Display name")
+            
+            # Row 3: Quantity | Cost Basis
+            r3_1, r3_2 = st.columns(2)
+            fqty = r3_1.number_input("Quantity", min_value=0.0, step=0.01, format="%.4f")
+            fcost = r3_2.number_input("Cost Basis (per unit)", min_value=0.0, step=0.01, format="%.2f")
+            
+            # Row 4: Currency | Current Price
+            r4_1, r4_2 = st.columns(2)
+            fcurr = r4_1.selectbox("Currency", ["USD", "ILS"])
+            fprice_override = r4_2.text_input("Current Price (optional override)", placeholder="Auto-fetch if empty")
+            
+            # Row 5: Account Type | Liquidity
+            r5_1, r5_2 = st.columns(2)
+            f_acct_type = r5_1.selectbox("Account Type", ["Brokerage", "Tax Advantaged", "Pension", "Wallet"])
+            f_liquidity = r5_2.selectbox("Liquidity", ["Liquid", "Semi-Liquid", "Illiquid"])
+            
+            # Allocation Bucket
+            f_alloc = st.selectbox("Allocation Bucket", ["Auto-assign", "US Equity", "IL Equity", "Fixed Income", "Crypto", "Cash"])
+            
+            # Notes
+            f_notes = st.text_area("Notes", placeholder="Optional notes")
+            
+            st.write("")
+            st.write("")
+            
+            # Footer Buttons
+            sc1, sc2 = st.columns([6, 2])
             with sc1:
-                if st.form_submit_button("Add Asset", use_container_width=True):
-                    add_asset(fname, fticker, fqty, fcost, ftype, fcurr)
-                    st.session_state.show_add_form = False
-                    st.rerun()
+                 # Spacer to push buttons right
+                 pass 
             with sc2:
-                if st.form_submit_button("Cancel", use_container_width=True):
-                    st.session_state.show_add_form = False
-                    st.rerun()
+                # We can't easily put two buttons side by side in a form submit area without hacks, 
+                # but we can use columns inside the form.
+                # Standard submit button is the primary action.
+                pass
+            
+            # Actions
+            col_actions = st.columns([1, 0.3, 0.3])
+            # We must use st.form_submit_button for the submit action
+            submitted = st.form_submit_button("＋ Add Position", use_container_width=True, type="primary")
+            
+            if submitted:
+                 alloc_val = None if f_alloc == "Auto-assign" else f_alloc
+                 try:
+                     man_p = float(fprice_override) if fprice_override.strip() else None
+                 except ValueError:
+                     man_p = None
+                     
+                 add_asset(fname, fticker, fqty, fcost, ftype, fcurr, f_acct_type, f_liquidity, alloc_val, f_notes, man_p)
+                 st.session_state.show_add_form = False
+                 st.rerun()
+                 
+        if st.button("Cancel", key="cancel_form_btn"):
+             st.session_state.show_add_form = False
+             st.rerun()
+             
         st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Main Dashboard Logic ---
@@ -222,7 +298,8 @@ else:
     total_cost_basis_ils = 0
 
     for asset in assets_list:
-        p = current_prices.get(asset.ticker, 0.0)
+        p_live = current_prices.get(asset.ticker, 0.0)
+        p = asset.manual_price if (asset.manual_price is not None and asset.manual_price > 0) else p_live
         mkt_v_local = p * asset.quantity
         
         if asset.currency == "USD":
@@ -307,9 +384,9 @@ else:
 
         # Liquidity Breakdown
         st.markdown("<div class='metric-title' style='margin-top:1.5rem; margin-left:5px;'>Liquidity Breakdown</div>", unsafe_allow_html=True)
-        l_liq = sum(x['val_ils'] for x in processed_data if x['type'] in ['Cash', 'IL Gov Bond'])
-        l_semi = sum(x['val_ils'] for x in processed_data if x['type'] in ['US Stock/ETF', 'IL Stock'])
-        l_illiq = sum(x['val_ils'] for x in processed_data if x['type'] == 'Crypto') # Simple mapping
+        l_liq = sum(x['val_ils'] for x in processed_data if x['type'] in ['Cash/Deposit', 'Israeli Gov Bond', 'Israeli Corporate Bond'])
+        l_semi = sum(x['val_ils'] for x in processed_data if x['type'] in ['US Stock/ETF', 'Israeli Stock', 'GSU/RSU'])
+        l_illiq = sum(x['val_ils'] for x in processed_data if x['type'] == 'Cryptocurrency') # Simple mapping
         
         for name, val, color in [("Liquid", l_liq, "#10B981"), ("Semi-Liquid", l_semi, "#3B82F6"), ("Illiquid", l_illiq, "#8B5CF6")]:
             pct = (val / total_mkt_ils * 100) if total_mkt_ils > 0 else 0
@@ -382,7 +459,15 @@ else:
         st.markdown("<h3 style='margin:0 0 1rem 0; font-size:1.2rem; font-weight:700;'>⚖️ Rebalancing Plan</h3>", unsafe_allow_html=True)
         
         # Define Targets matching categories
-        targets_map = {"US Stock/ETF": 40, "IL Stock": 10, "IL Gov Bond": 15, "Crypto": 5, "Cash": 30}
+        targets_map = {
+            "US Stock/ETF": 35, 
+            "GSU/RSU": 5,
+            "Israeli Stock": 10, 
+            "Israeli Gov Bond": 10, 
+            "Israeli Corporate Bond": 5,
+            "Cryptocurrency": 5, 
+            "Cash/Deposit": 30
+        }
         
         for cat, target_pct in targets_map.items():
             cat_sum = sum(x['val_ils'] for x in processed_data if x['type'] == cat)
