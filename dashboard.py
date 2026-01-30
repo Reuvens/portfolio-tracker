@@ -149,8 +149,30 @@ def add_asset(name, ticker, quantity, cost_per_unit, asset_type, currency, accou
             notes=notes,
             manual_price=manual_price
         )
+
         session.add(asset)
         session.commit()
+
+def update_asset(asset_id, name, ticker, quantity, cost_per_unit, asset_type, currency, account_type, liquidity, allocation_bucket, notes, manual_price):
+    with Session(engine) as session:
+        asset = session.get(Asset, asset_id)
+        if asset:
+            asset.name = name
+            asset.ticker = ticker
+            asset.quantity = quantity
+            asset.cost_per_unit = cost_per_unit
+            asset.cost_basis = quantity * cost_per_unit
+            asset.type = asset_type
+            asset.currency = currency
+            asset.account_type = account_type
+            asset.liquidity = liquidity
+            asset.allocation_bucket = allocation_bucket
+            asset.notes = notes
+            asset.manual_price = manual_price
+            session.add(asset)
+            session.commit()
+            return True
+    return False
 
 def delete_asset(asset_id):
     with Session(engine) as session:
@@ -183,6 +205,10 @@ with c_head2:
     ch_sub2.markdown("<div style='margin-top:10px; opacity:0.6; text-align:center;'>⚙️</div>", unsafe_allow_html=True)
     with ch_sub3:
         if st.button("✚ Add Position", key="add_pos_btn", use_container_width=True):
+            # Clear edit state for fresh add
+            keys_to_clear = ['edit_id', 'f_n', 'f_t', 'f_q', 'f_c', 'f_curr', 'f_type', 'f_acct', 'f_liq', 'f_alloc', 'f_notes', 'f_man_p']
+            for k in keys_to_clear:
+                if k in st.session_state: del st.session_state[k]
             st.session_state.show_add_form = True
     ch_sub4.markdown("<div style='margin-top:10px; opacity:0.6; text-align:center;'>↪️</div>", unsafe_allow_html=True)
 
@@ -212,59 +238,72 @@ if st.session_state.get('show_add_form', False):
         st.markdown("<div class='card' style='border: 1px solid #3B82F6; box-shadow: 0 4px 20px rgba(0,0,0,0.5);'>", unsafe_allow_html=True)
         # Header with Close Button
         c_h1, c_h2 = st.columns([1, 0.1])
-        c_h1.subheader("Add New Position")
+        is_edit = 'edit_id' in st.session_state
+        c_h1.subheader("Edit Position" if is_edit else "Add New Position")
+        
         if c_h2.button("✕", key="close_form_x"):
             st.session_state.show_add_form = False
             st.rerun()
 
         with st.form("add_asset_form_rev"):
+            # Defaults
+            d_name = st.session_state.get('f_n', '')
+            d_ticker = st.session_state.get('f_t', '')
+            d_qty = st.session_state.get('f_q', 0.0)
+            d_cost = st.session_state.get('f_c', 0.0)
+            d_curr = st.session_state.get('f_curr', 'USD')
+            d_type = st.session_state.get('f_type', 'US Stock/ETF')
+            d_acct = st.session_state.get('f_acct', 'Brokerage')
+            d_liq = st.session_state.get('f_liq', 'Liquid')
+            d_alloc = st.session_state.get('f_alloc', 'Auto-assign')
+            d_notes = st.session_state.get('f_notes', '')
+            d_man_p = st.session_state.get('f_man_p', '')
+
             # Asset Type (Full Width)
-            ftype = st.selectbox("Asset Type", ["US Stock/ETF", "Israeli Stock", "Israeli Corporate Bond", "Israeli Gov Bond", "Cryptocurrency", "Cash/Deposit", "GSU/RSU"])
+            curr_idx_type = ["US Stock/ETF", "Israeli Stock", "Israeli Corporate Bond", "Israeli Gov Bond", "Cryptocurrency", "Cash/Deposit", "GSU/RSU"].index(d_type) if d_type in ["US Stock/ETF", "Israeli Stock", "Israeli Corporate Bond", "Israeli Gov Bond", "Cryptocurrency", "Cash/Deposit", "GSU/RSU"] else 0
+            ftype = st.selectbox("Asset Type", ["US Stock/ETF", "Israeli Stock", "Israeli Corporate Bond", "Israeli Gov Bond", "Cryptocurrency", "Cash/Deposit", "GSU/RSU"], index=curr_idx_type)
             
             # Row 2: Ticker | Name
             r2_1, r2_2 = st.columns(2)
-            fticker = r2_1.text_input("Ticker / Symbol", placeholder="e.g., GOOG, 1184076")
-            fname = r2_2.text_input("Name", placeholder="Display name")
+            fticker = r2_1.text_input("Ticker / Symbol", value=d_ticker, placeholder="e.g., GOOG, 1184076")
+            fname = r2_2.text_input("Name", value=d_name, placeholder="Display name")
             
             # Row 3: Quantity | Cost Basis
             r3_1, r3_2 = st.columns(2)
-            fqty = r3_1.number_input("Quantity", min_value=0.0, step=0.01, format="%.4f")
-            fcost = r3_2.number_input("Cost Basis (per unit)", min_value=0.0, step=0.01, format="%.2f")
+            fqty = r3_1.number_input("Quantity", value=float(d_qty), min_value=0.0, step=0.01, format="%.4f")
+            fcost = r3_2.number_input("Cost Basis (per unit)", value=float(d_cost), min_value=0.0, step=0.01, format="%.2f")
             
             # Row 4: Currency | Current Price
             r4_1, r4_2 = st.columns(2)
-            fcurr = r4_1.selectbox("Currency", ["USD", "ILS"])
-            fprice_override = r4_2.text_input("Current Price (optional override)", placeholder="Auto-fetch if empty")
+            curr_opts = ["USD", "ILS"]
+            c_idx = curr_opts.index(d_curr) if d_curr in curr_opts else 0
+            fcurr = r4_1.selectbox("Currency", curr_opts, index=c_idx)
+            fprice_override = r4_2.text_input("Current Price (optional override)", value=str(d_man_p) if d_man_p else "", placeholder="Auto-fetch if empty")
             
             # Row 5: Account Type | Liquidity
             r5_1, r5_2 = st.columns(2)
-            f_acct_type = r5_1.selectbox("Account Type", ["Brokerage", "Tax Advantaged", "Pension", "Wallet"])
-            f_liquidity = r5_2.selectbox("Liquidity", ["Liquid", "Semi-Liquid", "Illiquid"])
+            acct_opts = ["Brokerage", "Tax Advantaged", "Pension", "Wallet"]
+            a_idx = acct_opts.index(d_acct) if d_acct in acct_opts else 0
+            f_acct_type = r5_1.selectbox("Account Type", acct_opts, index=a_idx)
+            
+            liq_opts = ["Liquid", "Semi-Liquid", "Illiquid"]
+            l_idx = liq_opts.index(d_liq) if d_liq in liq_opts else 0
+            f_liquidity = r5_2.selectbox("Liquidity", liq_opts, index=l_idx)
             
             # Allocation Bucket
-            f_alloc = st.selectbox("Allocation Bucket", ["Auto-assign", "US Equity", "IL Equity", "Fixed Income", "Crypto", "Cash"])
+            alo_opts = ["Auto-assign", "US Equity", "IL Equity", "Fixed Income", "Crypto", "Cash"]
+            al_idx = alo_opts.index(d_alloc) if d_alloc in alo_opts else 0
+            f_alloc = st.selectbox("Allocation Bucket", alo_opts, index=al_idx)
             
             # Notes
-            f_notes = st.text_area("Notes", placeholder="Optional notes")
+            f_notes = st.text_area("Notes", value=d_notes, placeholder="Optional notes")
             
             st.write("")
             st.write("")
-            
-            # Footer Buttons
-            sc1, sc2 = st.columns([6, 2])
-            with sc1:
-                 # Spacer to push buttons right
-                 pass 
-            with sc2:
-                # We can't easily put two buttons side by side in a form submit area without hacks, 
-                # but we can use columns inside the form.
-                # Standard submit button is the primary action.
-                pass
             
             # Actions
             col_actions = st.columns([1, 0.3, 0.3])
-            # We must use st.form_submit_button for the submit action
-            submitted = st.form_submit_button("＋ Add Position", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("💾 Update Position" if is_edit else "＋ Add Position", use_container_width=True, type="primary")
             
             if submitted:
                  alloc_val = None if f_alloc == "Auto-assign" else f_alloc
@@ -272,9 +311,16 @@ if st.session_state.get('show_add_form', False):
                      man_p = float(fprice_override) if fprice_override.strip() else None
                  except ValueError:
                      man_p = None
+                 
+                 if is_edit:
+                     update_asset(st.session_state.edit_id, fname, fticker, fqty, fcost, ftype, fcurr, f_acct_type, f_liquidity, alloc_val, f_notes, man_p)
+                 else:
+                     add_asset(fname, fticker, fqty, fcost, ftype, fcurr, f_acct_type, f_liquidity, alloc_val, f_notes, man_p)
                      
-                 add_asset(fname, fticker, fqty, fcost, ftype, fcurr, f_acct_type, f_liquidity, alloc_val, f_notes, man_p)
                  st.session_state.show_add_form = False
+                 # Clear keys
+                 for k in ['edit_id', 'f_n', 'f_t', 'f_q', 'f_c', 'f_curr', 'f_type', 'f_acct', 'f_liq', 'f_alloc', 'f_notes', 'f_man_p']:
+                     if k in st.session_state: del st.session_state[k]
                  st.rerun()
                  
         if st.button("Cancel", key="cancel_form_btn"):
@@ -289,8 +335,21 @@ assets_list = get_assets()
 if not assets_list:
     st.info("Your portfolio is currently empty. Click 'Add Position' to begin.")
 else:
-    all_tickers = [a.ticker for a in assets_list]
-    current_prices = get_live_prices(all_tickers)
+    # Smart Ticker Resolution
+    asset_lookup_map = {} 
+    lookup_tickers = set()
+
+    for asset in assets_list:
+        sym = asset.ticker.strip()
+        # Auto-append currency suffix for Crypto if missing (e.g. BTC -> BTC-USD)
+        if asset.type == 'Cryptocurrency' and '-' not in sym:
+             suffix = f"-{asset.currency}" # e.g. -USD or -ILS
+             sym = f"{sym}{suffix}"
+        
+        asset_lookup_map[asset.id] = sym
+        lookup_tickers.add(sym)
+
+    current_prices = get_live_prices(list(lookup_tickers))
     
     processed_data = []
     total_mkt_ils = 0
@@ -298,7 +357,8 @@ else:
     total_cost_basis_ils = 0
 
     for asset in assets_list:
-        p_live = current_prices.get(asset.ticker, 0.0)
+        lookup_sym = asset_lookup_map.get(asset.id, asset.ticker)
+        p_live = current_prices.get(lookup_sym, 0.0)
         p = asset.manual_price if (asset.manual_price is not None and asset.manual_price > 0) else p_live
         mkt_v_local = p * asset.quantity
         
@@ -446,11 +506,37 @@ else:
                         </div>
                     """, unsafe_allow_html=True)
                 with ci3:
-                     # Invisible action buttons
                      st.write("") # Adjust vertical
-                     if st.button("🗑️", key=f"del_v_{item['id']}", use_container_width=True):
-                          if delete_asset(item['id']):
-                               st.rerun()
+                     c_edit, c_del = st.columns(2)
+                     with c_edit:
+                        if st.button("✎", key=f"edit_v_{item['id']}", help="Edit Asset"):
+                            st.session_state.edit_id = item['id']
+                            st.session_state.f_n = item['name']
+                            st.session_state.f_t = item['ticker']
+                            st.session_state.f_q = item['qty']
+                            st.session_state.f_c = item['cpu']
+                            st.session_state.f_curr = item['currency']
+                            st.session_state.f_type = item['type']
+                            
+                            # We need to fetch the full object to get the other fields since they might not be in processed_data if we didn't add them
+                            # But wait, processed_data is built from asset objects. Let's assume we can get them or just query properly.
+                            # Ideally we should pass the full asset object data. 
+                            # Let's quickly query the asset by ID to get the exact fields
+                            with Session(engine) as session:
+                                a_full = session.get(Asset, item['id'])
+                                if a_full:
+                                    st.session_state.f_acct = a_full.account_type
+                                    st.session_state.f_liq = a_full.liquidity
+                                    st.session_state.f_alloc = a_full.allocation_bucket if a_full.allocation_bucket else "Auto-assign"
+                                    st.session_state.f_notes = a_full.notes if a_full.notes else ""
+                                    st.session_state.f_man_p = a_full.manual_price
+                            
+                            st.session_state.show_add_form = True
+                            st.rerun()
+                     with c_del:
+                        if st.button("🗑️", key=f"del_v_{item['id']}", help="Delete Asset"):
+                            if delete_asset(item['id']):
+                                st.rerun()
             st.divider()
         st.markdown("</div>", unsafe_allow_html=True)
 
