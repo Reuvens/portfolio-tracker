@@ -46,46 +46,64 @@ def get_live_prices(tickers: List[str]) -> Dict[str, float]:
     
     # yfinance allows bulk download
     # Use 5d to ensure we get data even if market is closed (e.g. Friday for TASE)
-    data = yf.download(tickers, period="5d", group_by="ticker", progress=False)
+    try:
+        data = yf.download(tickers, period="5d", group_by="ticker", progress=False)
+    except Exception as e:
+        print(f"yfinance bulk download failed: {e}")
+        return {}
     
     prices = {}
+    
+    # Check if data is empty
+    if data.empty:
+        return prices
+
     for ticker in tickers:
         try:
             price_found = False
-            ticker_data = None
-            
-            # Check structure: MultiIndex with Ticker at Level 0
-            if ticker in data.columns:
-                ticker_data = data[ticker]
-            # Check structure: Flat (if single ticker might have been flattened)
-            elif 'Close' in data.columns:
-                ticker_data = data
-            
-            if ticker_data is not None and not ticker_data.empty:
-                 if 'Close' in ticker_data.columns:
-                    price = ticker_data['Close'].iloc[-1]
-                    if hasattr(price, 'item'): 
-                         price = price.item() # convert numpy to native float
-                    
-                    if not pd.isna(price):
-                        prices[ticker] = float(price)
-                        price_found = True
+            last_price = None
 
-            if not price_found:
+            # 1. Handle Multi-Level Column (Result of multiple tickers)
+            if isinstance(data.columns, pd.MultiIndex):
+                if ticker in data.columns:
+                    ticker_df = data[ticker]
+                    if 'Close' in ticker_df.columns:
+                        series = ticker_df['Close'].dropna()
+                        if not series.empty:
+                            last_price = series.iloc[-1]
+                            price_found = True
+            
+            # 2. Handle Single Level Column (Result of single ticker or flattened)
+            elif 'Close' in data.columns:
+                # If only one ticker was requested, or yf returned flat structure
+                if len(tickers) == 1 and tickers[0] == ticker:
+                     series = data['Close'].dropna()
+                     if not series.empty:
+                        last_price = series.iloc[-1]
+                        price_found = True
+                else: 
+                     # Should ideally be caught by MultiIndex case, but safety net
+                     pass
+
+            if price_found and last_price is not None:
+                if hasattr(last_price, 'item'):
+                     prices[ticker] = float(last_price.item())
+                else:
+                     prices[ticker] = float(last_price)
+            else:
                 # Fallback Logic for TASE tickers (numeric)
                 if re.match(r'^\d+(\.TA)?$', ticker):
                     print(f"yfinance failed for {ticker}, trying Bizportal fallback...")
                     fallback_price = fetch_bizportal_price(ticker)
                     if fallback_price > 0:
                         prices[ticker] = fallback_price
-                        price_found = True
-            
-            if not price_found:
-                 prices[ticker] = 0.0 # Final Fallback
+
+            if ticker not in prices:
+                 prices[ticker] = 0.0 # Default to 0.0 if absolutely nothing found
 
         except Exception as e:
-            print(f"Error fetching {ticker}: {e}")
-            prices[ticker] = 0.0 # Fallback
+            print(f"Error extracting price for {ticker}: {e}")
+            prices[ticker] = 0.0
             
     return prices
 
