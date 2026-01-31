@@ -1,5 +1,8 @@
 
+
 from sqlmodel import Session, select, delete
+from datetime import datetime
+
 from backend.database import engine, create_db_and_tables
 from backend.models import User, Asset, Settings, StockGrant
 import pandas as pd
@@ -67,9 +70,36 @@ def seed_data():
         assets_to_add.append(Asset(user_id=user.id, name="Altshuler Shaham", ticker="ALTSHULER", quantity=1, cost_per_unit=27814, type="Fund", currency="ILS", category="Bank Account", alloc_il_stock_pct=1.0, manual_price=27814))
         assets_to_add.append(Asset(user_id=user.id, name="IBI General", ticker="IBI_GEN", quantity=1, cost_per_unit=11200, type="Fund", currency="ILS", category="Bank Account", alloc_il_stock_pct=1.0, manual_price=11200))
 
-        # --- Work ---
-        assets_to_add.append(Asset(user_id=user.id, name="Google GSUs", ticker="GOOG", quantity=72120/850, cost_per_unit=0.0, type="GSU/RSU", currency="USD", category="Work", alloc_work_pct=1.0)) # Qty in sheet=72120 (Value?), assuming ~85 units at $850? No, Value is 54682. 54k NIS is ~15k USD. ~80 shares. I'll put 85.
+        # --- Work (Rows 58-59) + GSU Data ---
+        # 1. Main Assets (For Net Worth - Vested Only)
+        # Google Vested: 93 Units
+        assets_to_add.append(Asset(user_id=user.id, name="Google (Vested)", ticker="GOOG", quantity=93, cost_per_unit=0.0, type="GSU/RSU", currency="USD", category="Work", alloc_work_pct=1.0))
+        # Microsoft: 2 Units
         assets_to_add.append(Asset(user_id=user.id, name="Microsoft", ticker="MSFT", quantity=2, cost_per_unit=430.0, type="US Stock/ETF", currency="USD", category="Work", alloc_work_pct=1.0))
+
+        # 2. GSU Schedule (StockGrant Entities)
+        
+        # Row 1: 1/1/22 -> 1/1/24 (Fully Vested)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2022-A", grant_date=datetime(2022,1,1), vest_date=datetime(2024,1,1), units=18, grant_price=145.53, is_vested=True))
+        
+        # Row 2: 3/8/23 -> 3/8/25 (Partially Vested: 26/10)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2023-A (Vested)", grant_date=datetime(2023,3,8), vest_date=datetime(2025,3,8), units=26, grant_price=96.65, is_vested=True))
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2023-A (Unvested)", grant_date=datetime(2023,3,8), vest_date=datetime(2025,3,8), units=10, grant_price=96.65, is_vested=False))
+
+        # Row 3: 3/6/24 -> 3/6/26 (Partially Vested: 10/12)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2024-A (Vested)", grant_date=datetime(2024,3,6), vest_date=datetime(2026,3,6), units=10, grant_price=144.07, is_vested=True))
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2024-A (Unvested)", grant_date=datetime(2024,3,6), vest_date=datetime(2026,3,6), units=12, grant_price=144.07, is_vested=False))
+
+        # Row 4: 3/6/25 -> 3/6/27 (Partially Vested: 4/13)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2025-A (Vested)", grant_date=datetime(2025,3,6), vest_date=datetime(2027,3,6), units=4, grant_price=174.99, is_vested=True))
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2025-A (Unvested)", grant_date=datetime(2025,3,6), vest_date=datetime(2027,3,6), units=13, grant_price=174.99, is_vested=False))
+
+        # Row 5: 1/8/2025 -> 8/7/2027 (Partially Vested: 35/6)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2025-B (Vested)", grant_date=datetime(2025,8,1), vest_date=datetime(2027,8,7), units=35, grant_price=185.92, is_vested=True))
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2025-B (Unvested)", grant_date=datetime(2025,8,1), vest_date=datetime(2027,8,7), units=6, grant_price=185.92, is_vested=False))
+
+        # Row 6: 1/8/2025 -> 8/7/2027 (Unvested: 71)
+        assets_to_add.append(StockGrant(user_id=user.id, name="GSU 2025-C (Unvested)", grant_date=datetime(2025,8,1), vest_date=datetime(2027,8,7), units=71, grant_price=185.92, is_vested=False))
 
         # --- Crypto (Rows 61-64) ---
         assets_to_add.append(Asset(user_id=user.id, name="Bitcoin", ticker="BTC", quantity=0.033, cost_per_unit=82989.0, type="Cryptocurrency", currency="USD", category="Crypto Wallet", alloc_crypto_pct=1.0))
